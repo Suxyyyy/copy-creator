@@ -20,6 +20,7 @@ export default function SettingsContent({ embedded }: Props) {
   const [localBaiduAppId, setLocalBaiduAppId] = useState(settings.baiduAppId);
   const [localBaiduSecret, setLocalBaiduSecret] = useState(settings.baiduSecret);
   const [localGoogleApiKey, setLocalGoogleApiKey] = useState(settings.googleApiKey);
+  const [localTranslateProxy, setLocalTranslateProxy] = useState(settings.translateProxy);
   const [localLang, setLocalLang] = useState(i18n.language);
   const [localShortcutKey, setLocalShortcutKey] = useState(settings.shortcutKey);
   const [recording, setRecording] = useState(false);
@@ -41,6 +42,7 @@ export default function SettingsContent({ embedded }: Props) {
     setLocalBaiduAppId(settings.baiduAppId);
     setLocalBaiduSecret(settings.baiduSecret);
     setLocalGoogleApiKey(settings.googleApiKey);
+    setLocalTranslateProxy(settings.translateProxy);
     setLocalLang(i18n.language);
     setLocalShortcutKey(settings.shortcutKey);
   }, [settings, i18n.language]);
@@ -98,6 +100,7 @@ export default function SettingsContent({ embedded }: Props) {
     await settings.setSetting("baidu_appid", localBaiduAppId);
     await settings.setSetting("baidu_secret", localBaiduSecret);
     await settings.setSetting("google_api_key", localGoogleApiKey);
+    await settings.setSetting("translate_proxy", localTranslateProxy);
     await settings.setSetting("language", localLang);
 
     const oldKey = settings.shortcutKey;
@@ -146,6 +149,8 @@ export default function SettingsContent({ embedded }: Props) {
         setLocalModel={setLocalModel}
         localGoogleApiKey={localGoogleApiKey}
         setLocalGoogleApiKey={setLocalGoogleApiKey}
+        localTranslateProxy={localTranslateProxy}
+        setLocalTranslateProxy={setLocalTranslateProxy}
       />
 
       <div className="settings-actions">

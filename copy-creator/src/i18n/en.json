@@ -17,6 +17,8 @@
     "googleConfig": "Google Translate Config",
     "googleNote": "Leave empty for free API, enter API Key for Google Cloud Translation",
     "googleApiKey": "Google API Key (Optional)",
+    "translateProxy": "Translation Proxy",
+    "translateProxyPlaceholder": "e.g. http://127.0.0.1:7890 or socks5://127.0.0.1:7891",
     "baiduConfig": "Baidu Translate Config",
     "baiduAppId": "Baidu App ID",
     "baiduSecret": "Baidu Secret Key",
@@ -39,6 +41,8 @@
     "storage": "Storage",
     "storagePath": "File Storage Location",
     "storageHint": "Restart the app after saving to take effect",
+    "restartHint": "Storage path changed, restart required to take effect",
+    "restartNow": "Restart Now",
     "changeFolder": "Change",
     "translation": "Translation"
   },

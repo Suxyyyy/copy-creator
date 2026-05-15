@@ -141,6 +141,7 @@ pub fn init_db(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         INSERT OR IGNORE INTO settings (key, value) VALUES ('baidu_appid', '');
         INSERT OR IGNORE INTO settings (key, value) VALUES ('baidu_secret', '');
         INSERT OR IGNORE INTO settings (key, value) VALUES ('google_api_key', '');
+        INSERT OR IGNORE INTO settings (key, value) VALUES ('translate_proxy', '');
 
         UPDATE settings SET value = 'google' WHERE key = 'default_translate_engine' AND value = 'builtin';
         ",
@@ -570,13 +571,19 @@ pub fn ensure_thumbnail(app: AppHandle, path: String) -> Result<String, String> 
 }
 
 #[tauri::command]
-pub fn select_storage_folder(app: AppHandle) -> Result<String, String> {
+pub async fn select_storage_folder(app: AppHandle) -> Result<String, String> {
     use tauri_plugin_dialog::DialogExt;
     let (tx, rx) = std::sync::mpsc::channel();
     app.dialog().file().pick_folder(move |path| {
         let _ = tx.send(path);
     });
-    match rx.recv_timeout(std::time::Duration::from_secs(60)) {
+    let result = tokio::task::spawn_blocking(move || {
+        rx.recv_timeout(std::time::Duration::from_secs(60))
+    })
+    .await
+    .map_err(|e| format!("task error: {}", e))?;
+
+    match result {
         Ok(Some(path)) => Ok(path.to_string()),
         Ok(None) => Err("cancelled".to_string()),
         Err(_) => Err("timeout".to_string()),

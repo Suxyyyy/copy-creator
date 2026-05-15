@@ -43,3 +43,4 @@ windows = { version = "0.58", features = [
   "Win32_System_Memory",
   "Win32_UI_Shell",
 ] }
+tauri-plugin-process = "2.3.1"

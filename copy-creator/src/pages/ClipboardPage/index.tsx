@@ -152,7 +152,7 @@ export default function ClipboardPage() {
                         {getFileName(r.content)}
                       </span>
                     ) : (
-                      r.content
+                      <span className="clipboard-text-content">{r.content}</span>
                     )}
                   </div>
                   <div className="notititle clipboard-card-footer">

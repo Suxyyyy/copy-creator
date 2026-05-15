@@ -12,6 +12,8 @@ interface TranslationSectionProps {
   setLocalModel: (model: string) => void;
   localGoogleApiKey: string;
   setLocalGoogleApiKey: (key: string) => void;
+  localTranslateProxy: string;
+  setLocalTranslateProxy: (proxy: string) => void;
 }
 
 export function TranslationSection({
@@ -25,6 +27,8 @@ export function TranslationSection({
   setLocalModel,
   localGoogleApiKey,
   setLocalGoogleApiKey,
+  localTranslateProxy,
+  setLocalTranslateProxy,
 }: TranslationSectionProps) {
   const { t } = useTranslation();
 
@@ -53,6 +57,15 @@ export function TranslationSection({
             value={localGoogleApiKey}
             onChange={(e) => setLocalGoogleApiKey(e.target.value)}
             placeholder={t("settings.googleNote")}
+          />
+        </div>
+        <div className="settings-row vertical">
+          <div className="settings-row-label">{t("settings.translateProxy")}</div>
+          <input
+            className="settings-input"
+            value={localTranslateProxy}
+            onChange={(e) => setLocalTranslateProxy(e.target.value)}
+            placeholder={t("settings.translateProxyPlaceholder")}
           />
         </div>
         <div className="settings-row vertical">

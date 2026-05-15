@@ -13,6 +13,7 @@ interface SettingsState {
   baiduAppId: string;
   baiduSecret: string;
   googleApiKey: string;
+  translateProxy: string;
   language: string;
   shortcutKey: string;
 
@@ -31,6 +32,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   baiduAppId: "",
   baiduSecret: "",
   googleApiKey: "",
+  translateProxy: "",
   language: "zh-CN",
   shortcutKey: "",
 
@@ -55,6 +57,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const baiduAppId = await invoke<string>("get_setting", { key: "baidu_appid" });
       const baiduSecret = await invoke<string>("get_setting", { key: "baidu_secret" });
       const googleApiKey = await invoke<string>("get_setting", { key: "google_api_key" });
+      const translateProxy = await invoke<string>("get_setting", { key: "translate_proxy" });
       const language = await invoke<string>("get_setting", { key: "language" });
       const shortcutKey = await invoke<string>("get_setting", { key: "shortcut_key" });
 
@@ -68,6 +71,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         baiduAppId: baiduAppId || "",
         baiduSecret: baiduSecret || "",
         googleApiKey: googleApiKey || "",
+        translateProxy: translateProxy || "",
         language: language || "zh-CN",
         shortcutKey: shortcutKey || "",
       });

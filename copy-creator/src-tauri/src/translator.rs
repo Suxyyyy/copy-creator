@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::error::Error;
 use tauri::Manager;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -216,31 +217,50 @@ async fn translate_google(
     target_lang: &str,
 ) -> Result<TranslateResponse, String> {
     let state = app.state::<crate::db::DbState>();
-    let api_key: String = {
+    let (api_key, proxy_url): (String, String) = {
         let conn = state.conn.lock().map_err(|e| e.to_string())?;
-        conn.query_row(
+        let key: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'google_api_key'", [], |r| r.get(0),
-        ).unwrap_or_default()
+        ).unwrap_or_default();
+        let proxy: String = conn.query_row(
+            "SELECT value FROM settings WHERE key = 'translate_proxy'", [], |r| r.get(0),
+        ).unwrap_or_default();
+        (key, proxy)
     };
 
-    let client = reqwest::Client::new();
+    let mut builder = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15));
 
-    // Free Google Translate API (unofficial endpoint, no key required)
+    if !proxy_url.is_empty() {
+        let proxy = reqwest::Proxy::all(&proxy_url)
+            .map_err(|e| format!("代理配置无效 ({}): {}", proxy_url, e))?;
+        builder = builder.proxy(proxy);
+    }
+
+    let client = builder
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
     if api_key.is_empty() {
-        let url = format!(
-            "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl={}&dt=t&q={}",
-            target_lang,
-            urlencoding(&text)
-        );
-
         let resp = client
-            .get(&url)
-            .send().await.map_err(|e| format!("Google 翻译请求失败: {}", e))?;
+            .get("https://translate.googleapis.com/translate_a/single")
+            .query(&[
+                ("client", "gtx"),
+                ("sl", "auto"),
+                ("tl", target_lang),
+                ("dt", "t"),
+                ("q", text),
+            ])
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+            .send().await.map_err(|e| fmt_reqwest_error(&e))?;
 
+        let status = resp.status();
         let body = resp.text().await.map_err(|e| format!("读取 Google 响应失败: {}", e))?;
 
-        // Parse the unofficial Google Translate JSON format
-        // Response: [[["translated text", "source", ...]], ...]
+        if !status.is_success() {
+            return Err(format!("Google 翻译 HTTP {}: {}", status.as_u16(), body.chars().take(200).collect::<String>()));
+        }
+
         let json: serde_json::Value = serde_json::from_str(&body)
             .map_err(|e| format!("解析 Google 响应失败: {}", e))?;
 
@@ -256,20 +276,16 @@ async fn translate_google(
         });
     }
 
-    // Official Google Cloud Translation API (with API key)
-    let url = format!(
-        "https://translation.googleapis.com/language/translate/v2?key={}",
-        api_key
-    );
-
     let resp = client
-        .post(&url)
+        .post("https://translation.googleapis.com/language/translate/v2")
+        .query(&[("key", api_key.as_str())])
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         .json(&serde_json::json!({
             "q": text,
             "target": target_lang,
             "format": "text"
         }))
-        .send().await.map_err(|e| format!("Google 翻译请求失败: {}", e))?;
+        .send().await.map_err(|e| fmt_reqwest_error(&e))?;
 
     let json: serde_json::Value = resp.json().await
         .map_err(|e| format!("解析 Google 响应失败: {}", e))?;
@@ -290,18 +306,20 @@ async fn translate_google(
     })
 }
 
-fn urlencoding(s: &str) -> String {
-    let mut result = String::with_capacity(s.len() * 3);
-    for byte in s.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                result.push(byte as char);
-            }
-            b' ' => result.push('+'),
-            _ => {
-                result.push_str(&format!("%{:02X}", byte));
-            }
-        }
+fn fmt_reqwest_error(err: &reqwest::Error) -> String {
+    let mut detail = format!("{}", err);
+    let mut source: Option<&dyn Error> = err.source();
+    while let Some(e) = source {
+        detail.push_str(&format!(" → {}", e));
+        source = e.source();
     }
-    result
+    if err.is_connect() {
+        format!("Google 翻译连接失败（可能需要配置代理）: {}", detail)
+    } else if err.is_timeout() {
+        format!("Google 翻译请求超时: {}", detail)
+    } else {
+        format!("Google 翻译请求失败: {}", detail)
+    }
 }
+
+

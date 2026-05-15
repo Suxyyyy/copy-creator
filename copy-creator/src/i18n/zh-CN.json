@@ -17,6 +17,8 @@
     "googleConfig": "Google 翻译配置",
     "googleNote": "留空使用免费接口，填写 API Key 使用 Google Cloud Translation",
     "googleApiKey": "Google API Key (可选)",
+    "translateProxy": "翻译代理地址",
+    "translateProxyPlaceholder": "如 http://127.0.0.1:7890 或 socks5://127.0.0.1:7891",
     "baiduConfig": "百度翻译配置",
     "baiduAppId": "百度 AppID",
     "baiduSecret": "百度密钥",
@@ -39,6 +41,8 @@
     "storage": "存储",
     "storagePath": "文件存储位置",
     "storageHint": "保存后，重启应用生效",
+    "restartHint": "存储路径已更改，需要重启应用生效",
+    "restartNow": "立即重启",
     "changeFolder": "更改",
     "translation": "翻译"
   },
