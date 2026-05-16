@@ -97,5 +97,8 @@
     "close": "关闭",
     "hide": "隐藏",
     "loading": "加载中..."
+  },
+  "radialMenu": {
+    "empty": "暂无内容"
   }
 }

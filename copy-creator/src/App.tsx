@@ -5,6 +5,7 @@ import ClipboardPage from "./pages/ClipboardPage";
 import PhrasePage from "./pages/PhrasePage";
 import TranslationPage from "./pages/TranslationPage";
 import SettingsContent from "./components/SettingsContent";
+import RadialMenu from "./components/RadialMenu";
 import { useSettingsStore } from "./stores/settingsStore";
 import { Icons } from "./components/Icons";
 
@@ -164,6 +165,7 @@ function App() {
         </div>
       </div>
 
+      <RadialMenu />
     </div>
   );
 }

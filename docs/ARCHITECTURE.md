@@ -2,22 +2,22 @@
 
 ## 1. 技术栈
 
-| 层 | 选型 | 理由 |
-|------|------|------|
-| 桌面框架 | **Tauri 2.x** | 剪贴板监听、全局快捷键、系统托盘等需原生系统调用，Rust 层天然胜任；包体积极小 |
-| 前端框架 | **React 18 + TypeScript** | 生态成熟，组件化开发效率高 |
-| UI 组件库 | **纯 CSS + CSS Variables** | iOS 风格设计，轻量无依赖，主题切换便捷 |
-| 状态管理 | **Zustand** | 轻量，无模板代码，适合中等复杂度 |
-| 本地存储 | **SQLite** (Rust: `rusqlite`) | 嵌入式关系数据库，零配置，Tauri 原生支持 |
-| 剪切板 | Tauri clipboard API + 原生扩展 | 文本和图片监听与写入 |
-| HTTP 客户端 | Rust: `reqwest` | 翻译 API 调用，异步高性能 |
-| i18n | `react-i18next` | 前端国际化，支持多语言 |
-| 构建工具 | Vite | 快，React 官方推荐 |
-| 包管理 | pnpm | 磁盘高效，速度快 |
+| 层        | 选型                            | 理由                                        |
+| -------- | ----------------------------- | ----------------------------------------- |
+| 桌面框架     | **Tauri 2.x**                 | 剪贴板监听、全局快捷键、系统托盘等需原生系统调用，Rust 层天然胜任；包体积极小 |
+| 前端框架     | **React 18 + TypeScript**     | 生态成熟，组件化开发效率高                             |
+| UI 组件库   | **纯 CSS + CSS Variables**     | iOS 风格设计，轻量无依赖，主题切换便捷                     |
+| 状态管理     | **Zustand**                   | 轻量，无模板代码，适合中等复杂度                          |
+| 本地存储     | **SQLite** (Rust: `rusqlite`) | 嵌入式关系数据库，零配置，Tauri 原生支持                   |
+| 剪切板      | Tauri clipboard API + 原生扩展    | 文本和图片监听与写入                                |
+| HTTP 客户端 | Rust: `reqwest`               | 翻译 API 调用，异步高性能                           |
+| i18n     | `react-i18next`               | 前端国际化，支持多语言                               |
+| 构建工具     | Vite                          | 快，React 官方推荐                              |
+| 包管理      | pnpm                          | 磁盘高效，速度快                                  |
 
 ## 2. 系统架构
 
-```
+```Markdown
 ┌─────────────────────────────────────────────────────┐
 │                  Copy Creator                        │
 ├─────────────────────────────────────────────────────┤
@@ -264,12 +264,12 @@ src/
 
 ## 6. 构建与打包
 
-| 目标 | 工具 | 命令 |
-|------|------|------|
-| 开发调试 | Vite + Tauri CLI | `pnpm tauri dev` |
+| 目标         | 工具                   | 命令                 |
+| ---------- | -------------------- | ------------------ |
+| 开发调试       | Vite + Tauri CLI     | `pnpm tauri dev`   |
 | Windows 打包 | Tauri Bundler → .msi | `pnpm tauri build` |
-| macOS 打包 | Tauri Bundler → .dmg | `pnpm tauri build` |
-| 自动更新 | Tauri updater | GitHub Releases 分发 |
+| macOS 打包   | Tauri Bundler → .dmg | `pnpm tauri build` |
+| 自动更新       | Tauri updater        | GitHub Releases 分发 |
 
 ## 7. 项目目录结构
 
@@ -307,3 +307,4 @@ copy-creator/
 ├── vite.config.ts
 └── tsconfig.json
 ```
+

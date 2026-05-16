@@ -97,5 +97,8 @@
     "close": "Close",
     "hide": "Hide",
     "loading": "Loading..."
+  },
+  "radialMenu": {
+    "empty": "No items"
   }
 }

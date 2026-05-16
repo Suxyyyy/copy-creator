@@ -1,4 +1,12 @@
 export const Icons = {
+  logo: (
+    <svg viewBox="0 0 28 28" fill="none">
+      <rect width="28" height="28" rx="7" fill="#007AFF" />
+      <path d="M10 5h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z" fill="rgba(255,255,255,0.2)" />
+      <rect x="9" y="3" width="10" height="5" rx="2" fill="rgba(255,255,255,0.9)" />
+      <polyline points="10 15 13 18 18 12" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </svg>
+  ),
   clipboard: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="8" y="2" width="8" height="4" rx="1" />

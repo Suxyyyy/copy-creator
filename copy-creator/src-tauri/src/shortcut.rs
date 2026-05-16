@@ -1,6 +1,6 @@
-use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicPtr, AtomicU64, Ordering};
 use std::sync::OnceLock;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
 #[cfg(target_os = "windows")]
@@ -16,6 +16,23 @@ static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 static HOOK_HANDLE: AtomicPtr<core::ffi::c_void> = AtomicPtr::new(core::ptr::null_mut());
 
 static TOGGLING: AtomicBool = AtomicBool::new(false);
+
+#[cfg(target_os = "windows")]
+static RADIAL_RIGHT_DOWN: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "windows")]
+static RADIAL_START_X: AtomicI32 = AtomicI32::new(0);
+#[cfg(target_os = "windows")]
+static RADIAL_START_Y: AtomicI32 = AtomicI32::new(0);
+#[cfg(target_os = "windows")]
+static LAST_MOVE_EMIT_MS: AtomicU64 = AtomicU64::new(0);
+
+const MOVE_THROTTLE_MS: u64 = 16;
+
+#[derive(serde::Serialize, Clone)]
+struct RadialMenuPoint {
+    x: i32,
+    y: i32,
+}
 
 pub fn toggle_window(app: &AppHandle) {
     if TOGGLING.swap(true, Ordering::SeqCst) {
@@ -38,6 +55,15 @@ pub fn toggle_window(app: &AppHandle) {
 }
 
 #[cfg(target_os = "windows")]
+fn screen_to_css(window: &tauri::WebviewWindow, screen_x: i32, screen_y: i32) -> Option<(i32, i32)> {
+    let win_pos = window.outer_position().ok()?;
+    let scale = window.scale_factor().ok().unwrap_or(1.0);
+    let rel_x = ((screen_x - win_pos.x) as f64 / scale).round() as i32;
+    let rel_y = ((screen_y - win_pos.y) as f64 / scale).round() as i32;
+    Some((rel_x, rel_y))
+}
+
+#[cfg(target_os = "windows")]
 unsafe extern "system" fn mouse_hook_callback(
     n_code: i32,
     w_param: WPARAM,
@@ -45,22 +71,83 @@ unsafe extern "system" fn mouse_hook_callback(
 ) -> LRESULT {
     if n_code >= 0 {
         let msg = w_param.0 as u32;
+
         if msg == WM_RBUTTONDOWN {
             let ctrl = (GetAsyncKeyState(VK_CONTROL.0 as i32) as u16) & 0x8000 != 0;
             let shift = (GetAsyncKeyState(VK_SHIFT.0 as i32) as u16) & 0x8000 != 0;
+
             if ctrl && shift {
                 if let Some(app) = APP_HANDLE.get() {
                     toggle_window(app);
                 }
                 return LRESULT(1);
             }
+
+            if ctrl && !shift {
+                if let Some(app) = APP_HANDLE.get() {
+                    if let Some(window) = app.get_webview_window("main") {
+                        if window.is_visible().unwrap_or(false) {
+                            let hook_struct = &*(l_param.0 as *const MSLLHOOKSTRUCT);
+                            let sx = hook_struct.pt.x;
+                            let sy = hook_struct.pt.y;
+
+                            RADIAL_RIGHT_DOWN.store(true, Ordering::SeqCst);
+                            RADIAL_START_X.store(sx, Ordering::SeqCst);
+                            RADIAL_START_Y.store(sy, Ordering::SeqCst);
+
+                            if let Some((cx, cy)) = screen_to_css(&window, sx, sy) {
+                                log::info!("radial-menu-down: screen=({}, {}), css=({}, {})", sx, sy, cx, cy);
+                                let _ = app.emit(
+                                    "radial-menu-down",
+                                    RadialMenuPoint { x: cx, y: cy },
+                                );
+                            } else {
+                                log::warn!("radial-menu-down: screen_to_css failed for screen=({}, {})", sx, sy);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if msg == WM_MOUSEMOVE && RADIAL_RIGHT_DOWN.load(Ordering::SeqCst) {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            let last = LAST_MOVE_EMIT_MS.load(Ordering::SeqCst);
+            if now.saturating_sub(last) >= MOVE_THROTTLE_MS {
+                LAST_MOVE_EMIT_MS.store(now, Ordering::SeqCst);
+
+                if let Some(app) = APP_HANDLE.get() {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let hook_struct = &*(l_param.0 as *const MSLLHOOKSTRUCT);
+                        let sx = hook_struct.pt.x;
+                        let sy = hook_struct.pt.y;
+
+                        if let Some((cx, cy)) = screen_to_css(&window, sx, sy) {
+                            let _ = app.emit(
+                                "radial-menu-move",
+                                RadialMenuPoint { x: cx, y: cy },
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        if msg == WM_RBUTTONUP && RADIAL_RIGHT_DOWN.load(Ordering::SeqCst) {
+            RADIAL_RIGHT_DOWN.store(false, Ordering::SeqCst);
+            log::info!("radial-menu-up");
+
+            if let Some(app) = APP_HANDLE.get() {
+                let _ = app.emit("radial-menu-up", ());
+            }
         }
     }
 
     let hook = HHOOK(HOOK_HANDLE.load(Ordering::SeqCst));
-    unsafe {
-        CallNextHookEx(hook, n_code, w_param, l_param)
-    }
+    unsafe { CallNextHookEx(hook, n_code, w_param, l_param) }
 }
 
 pub fn install_mouse_hook(app: &AppHandle) {

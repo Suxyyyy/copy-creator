@@ -46,11 +46,11 @@ const GlassIcons: React.FC<GlassIconsProps> = ({
   };
 
   return (
-    <ul className={`wrapper ${className || ''}`}>
+    <ul className={`nav-list ${className || ''}`}>
       {items.map((item, index) => (
         <li
           key={index}
-          className={`icon-content ${item.customClass || ''}`}
+          className="nav-item"
           role="button"
           tabIndex={0}
           aria-label={item.label}
@@ -62,11 +62,11 @@ const GlassIcons: React.FC<GlassIconsProps> = ({
           }}
         >
           <button
-            className={`icon-btn ${activeIndex === index ? 'active' : ''}`}
+            className={`nav-item-btn ${activeIndex === index ? 'active' : ''}`}
             onClick={() => handleButtonClick(index)}
           >
-            <div className="filled" />
-            {item.icon}
+            <span className="nav-item-icon">{item.icon}</span>
+            <span className="nav-item-label">{item.label}</span>
           </button>
         </li>
       ))}
