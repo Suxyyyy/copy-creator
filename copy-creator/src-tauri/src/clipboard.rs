@@ -89,61 +89,72 @@ fn read_clipboard_files() -> Option<Vec<String>> {
     }
 }
 
-pub fn start_monitor(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let handle = app.clone();
-    
-    let initial_text = handle.clipboard().read_text()
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default();
-    
-    let initial_image_hash: u64 = if let Ok(image) = handle.clipboard().read_image() {
+/// Cached clipboard state, updated by the monitor and by paste functions.
+/// When paste writes to the clipboard, it syncs these to prevent duplicate records.
+pub static LAST_CLIPBOARD_TEXT: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+pub static LAST_CLIPBOARD_IMAGE_HASH: std::sync::Mutex<u64> = std::sync::Mutex::new(0);
+#[cfg(target_os = "windows")]
+pub static LAST_CLIPBOARD_FILES_KEY: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+pub fn sync_monitor_cache(handle: &AppHandle) {
+    if let Ok(text) = handle.clipboard().read_text() {
+        *LAST_CLIPBOARD_TEXT.lock().unwrap() = text.trim().to_string();
+    }
+    if let Ok(image) = handle.clipboard().read_image() {
         let rgba = image.rgba();
         if !rgba.is_empty() && image.width() > 0 && image.height() > 0 {
-            rgba.iter()
-                .take(400)
-                .fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64))
+            let hash = rgba.iter().take(400).fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64));
+            *LAST_CLIPBOARD_IMAGE_HASH.lock().unwrap() = hash;
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(files) = read_clipboard_files() {
+            *LAST_CLIPBOARD_FILES_KEY.lock().unwrap() = files.join("|");
+        }
+    }
+}
+
+pub fn start_monitor(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let handle = app.clone();
+
+    {
+        let initial_text = handle.clipboard().read_text()
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+        *LAST_CLIPBOARD_TEXT.lock().unwrap() = initial_text;
+    }
+
+    {
+        let initial_hash = if let Ok(image) = handle.clipboard().read_image() {
+            let rgba = image.rgba();
+            if !rgba.is_empty() && image.width() > 0 && image.height() > 0 {
+                rgba.iter()
+                    .take(400)
+                    .fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64))
+            } else {
+                0
+            }
         } else {
             0
-        }
-    } else {
-        0
-    };
-    
+        };
+        *LAST_CLIPBOARD_IMAGE_HASH.lock().unwrap() = initial_hash;
+    }
+
     #[cfg(target_os = "windows")]
-    let initial_files_key = read_clipboard_files()
-        .map(|files| files.join("|"))
-        .unwrap_or_default();
-    #[cfg(not(target_os = "windows"))]
-    let initial_files_key = String::new();
+    {
+        let key = read_clipboard_files()
+            .map(|files| files.join("|"))
+            .unwrap_or_default();
+        *LAST_CLIPBOARD_FILES_KEY.lock().unwrap() = key;
+    }
 
     std::thread::spawn(move || {
-        let mut last_text = initial_text;
-        let mut last_image_hash = initial_image_hash;
-        let mut last_files_key = initial_files_key;
-
         loop {
         std::thread::sleep(std::time::Duration::from_millis(800));
 
-        if crate::paste::PASTING.swap(false, std::sync::atomic::Ordering::SeqCst) {
-            let _ = handle.clipboard().read_text();
-            if let Ok(image) = handle.clipboard().read_image() {
-                let rgba = image.rgba();
-                if !rgba.is_empty() && image.width() > 0 && image.height() > 0 {
-                    last_image_hash = rgba
-                        .iter()
-                        .take(400)
-                        .fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64));
-                }
-            }
-            if let Ok(text) = handle.clipboard().read_text() {
-                last_text = text.trim().to_string();
-            }
-            #[cfg(target_os = "windows")]
-            {
-                if let Some(files) = read_clipboard_files() {
-                    last_files_key = files.join("|");
-                }
-            }
+        if crate::paste::PASTING.load(std::sync::atomic::Ordering::SeqCst) {
+            sync_monitor_cache(&handle);
             continue;
         }
 
@@ -157,9 +168,13 @@ pub fn start_monitor(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> 
                     .take(400)
                     .fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64));
 
-                if hash != last_image_hash {
-                    last_image_hash = hash;
+                {
+                    let mut cached_hash = LAST_CLIPBOARD_IMAGE_HASH.lock().unwrap();
+                    if hash == *cached_hash { continue; }
+                    *cached_hash = hash;
+                }
 
+                {
                     let rgba_vec = rgba.to_vec();
                     let img_w = image.width();
                     let img_h = image.height();
@@ -253,19 +268,19 @@ pub fn start_monitor(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> 
 
         if image_recorded {
             if let Ok(text) = handle.clipboard().read_text() {
-                last_text = text.trim().to_string();
+                *LAST_CLIPBOARD_TEXT.lock().unwrap() = text.trim().to_string();
             }
             #[cfg(target_os = "windows")]
             {
                 if let Some(files) = read_clipboard_files() {
-                    last_files_key = files.join("|");
+                    *LAST_CLIPBOARD_FILES_KEY.lock().unwrap() = files.join("|");
                 }
             }
         } else {
             if let Ok(text) = handle.clipboard().read_text() {
                 let text = text.trim().to_string();
-                if !text.is_empty() && text != last_text {
-                    last_text = text.clone();
+                if !text.is_empty() && text != *LAST_CLIPBOARD_TEXT.lock().unwrap() {
+                    *LAST_CLIPBOARD_TEXT.lock().unwrap() = text.clone();
 
                     let record_type = if is_url(&text) {
                         "link"
@@ -302,8 +317,11 @@ pub fn start_monitor(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> 
             {
                 if let Some(files) = read_clipboard_files() {
                     let key = files.join("|");
-                    if key != last_files_key {
-                        last_files_key = key.clone();
+                    {
+                        let mut cached = LAST_CLIPBOARD_FILES_KEY.lock().unwrap();
+                        if key == *cached { continue; }
+                        *cached = key.clone();
+                    }
 
                         for file_path in files {
                             if file_path.trim().is_empty() {
@@ -522,7 +540,6 @@ pub fn start_monitor(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> 
                     }
                 }
             }
-        }
         }
     });
 

@@ -6,13 +6,11 @@
 }
 
 .radial-menu-popup {
-  position: fixed;
-  max-height: 420px;
+  width: 100%;
+  height: 100%;
   background: var(--card-inner-bg);
   backdrop-filter: blur(40px) saturate(180%);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border: 1px solid var(--separator);
-  border-radius: 16px;
   box-shadow:
     0 20px 60px rgba(0, 0, 0, 0.25),
     0 0 0 0.5px rgba(255, 255, 255, 0.4) inset;
@@ -65,7 +63,7 @@
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   cursor: pointer;
-  border-radius: 10px 10px 0 0;
+  border-radius: 10px;
   transition: background 0.15s, color 0.15s;
   overflow: hidden;
 }
@@ -174,6 +172,8 @@
 
 /* --- Item --- */
 .radial-menu-item {
+  display: flex;
+  flex-direction: column;
   padding: 8px 10px;
   border-radius: 8px;
   cursor: pointer;
@@ -210,6 +210,32 @@
   font-weight: var(--weight-medium);
 }
 
+/* --- Item Time & Remark --- */
+.radial-menu-item-time {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-weight: var(--weight-normal);
+  margin-top: 4px;
+}
+
+[data-theme="dark"] .radial-menu-item-time {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.radial-menu-item-remark {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-weight: var(--weight-normal);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-theme="dark"] .radial-menu-item-remark {
+  color: rgba(255, 255, 255, 0.4);
+}
+
 /* --- Empty State --- */
 .radial-menu-empty {
   display: flex;
@@ -242,7 +268,11 @@
 
 .hover-progress-bar {
   height: 100%;
-  background: var(--accent);
+  background: rgba(0, 0, 0, 0.35);
   border-radius: 1px;
   transition: width 50ms linear;
+}
+
+[data-theme="dark"] .hover-progress-bar {
+  background: rgba(255, 255, 255, 0.6);
 }

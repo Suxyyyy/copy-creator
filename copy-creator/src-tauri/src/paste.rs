@@ -31,6 +31,14 @@ fn get_image_cache() -> &'static Mutex<HashMap<String, CachedImage>> {
     IMAGE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+struct PasteGuard;
+
+impl Drop for PasteGuard {
+    fn drop(&mut self) {
+        PASTING.store(false, Ordering::SeqCst);
+    }
+}
+
 pub fn cache_image(path: String, rgba: Vec<u8>, width: u32, height: u32, png_bytes: Vec<u8>) {
     let mut cache = get_image_cache().lock().unwrap();
     if cache.len() >= 30 {
@@ -54,6 +62,17 @@ use std::thread;
 use std::time::Duration;
 
 fn paste_with_defocus(app: &AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    unsafe {
+        use windows::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow;
+        let _ = AllowSetForegroundWindow(0xFFFFFFFF);
+    }
+
+    // Hide radial popup if visible
+    if let Some(radial) = app.get_webview_window("radial-menu") {
+        let _ = radial.hide();
+    }
+
     let window = app
         .get_webview_window("main")
         .ok_or("no window")?;
@@ -72,21 +91,27 @@ fn paste_with_defocus(app: &AppHandle) -> Result<(), String> {
         }
     }
 
-    thread::sleep(Duration::from_millis(100));
+    thread::sleep(Duration::from_millis(200));
 
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| format!("enigo init: {}", e))?;
 
     #[cfg(target_os = "windows")]
     {
         enigo.key(Key::Control, Direction::Press).map_err(|e| e.to_string())?;
-        enigo.key(Key::Unicode('v'), Direction::Click).map_err(|e| e.to_string())?;
+        thread::sleep(Duration::from_millis(30));
+        enigo.key(Key::V, Direction::Click).map_err(|e| e.to_string())?;
+        thread::sleep(Duration::from_millis(10));
         enigo.key(Key::Control, Direction::Release).map_err(|e| e.to_string())?;
     }
 
     #[cfg(target_os = "macos")]
     {
         enigo.key(Key::Meta, Direction::Press).map_err(|e| e.to_string())?;
-        enigo.key(Key::Unicode('v'), Direction::Click).map_err(|e| e.to_string())?;
+        thread::sleep(Duration::from_millis(30));
+        enigo.key(Key::V, Direction::Press).map_err(|e| e.to_string())?;
+        thread::sleep(Duration::from_millis(10));
+        enigo.key(Key::V, Direction::Release).map_err(|e| e.to_string())?;
+        thread::sleep(Duration::from_millis(10));
         enigo.key(Key::Meta, Direction::Release).map_err(|e| e.to_string())?;
     }
 
@@ -234,14 +259,18 @@ fn write_files_to_clipboard(paths: &[String]) -> Result<(), String> {
 
 #[tauri::command]
 pub fn paste_text(app: AppHandle, text: String) -> Result<(), String> {
-    PASTING.store(true, Ordering::SeqCst);
+    if PASTING.swap(true, Ordering::SeqCst) {
+        return Ok(());
+    }
 
-    app.clipboard()
-        .write_text(text)
-        .map_err(|e| e.to_string())?;
+    if let Err(e) = app.clipboard().write_text(text) {
+        PASTING.store(false, Ordering::SeqCst);
+        return Err(e.to_string());
+    }
 
     let handle = app.clone();
     std::thread::spawn(move || {
+        let _guard = PasteGuard;
         paste_with_defocus(&handle).ok();
     });
 
@@ -250,9 +279,13 @@ pub fn paste_text(app: AppHandle, text: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn paste_image(app: AppHandle, path: String) -> Result<(), String> {
+    if PASTING.swap(true, Ordering::SeqCst) {
+        return Ok(());
+    }
+
     let handle = app.clone();
     std::thread::spawn(move || {
-        PASTING.store(true, Ordering::SeqCst);
+        let _guard = PasteGuard;
 
         let (rgba, w, h, png) = {
             let cache = get_image_cache().lock().unwrap();
@@ -305,6 +338,7 @@ pub fn paste_image(app: AppHandle, path: String) -> Result<(), String> {
             }
         }
 
+        crate::clipboard::sync_monitor_cache(&handle);
         paste_with_defocus(&handle).ok();
     });
 
@@ -313,20 +347,29 @@ pub fn paste_image(app: AppHandle, path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn paste_file(app: AppHandle, path: String) -> Result<(), String> {
-    PASTING.store(true, Ordering::SeqCst);
+    if PASTING.swap(true, Ordering::SeqCst) {
+        return Ok(());
+    }
 
     #[cfg(target_os = "windows")]
     {
-        write_files_to_clipboard(&[path])?;
+        if let Err(e) = write_files_to_clipboard(&[path]) {
+            PASTING.store(false, Ordering::SeqCst);
+            return Err(e);
+        }
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        app.clipboard().write_text(path).map_err(|e| e.to_string())?;
+        if let Err(e) = app.clipboard().write_text(path) {
+            PASTING.store(false, Ordering::SeqCst);
+            return Err(e.to_string());
+        }
     }
 
     let handle = app.clone();
     std::thread::spawn(move || {
+        let _guard = PasteGuard;
         paste_with_defocus(&handle).ok();
     });
 

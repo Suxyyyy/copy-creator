@@ -75,6 +75,7 @@ unsafe extern "system" fn mouse_hook_callback(
         if msg == WM_RBUTTONDOWN {
             let ctrl = (GetAsyncKeyState(VK_CONTROL.0 as i32) as u16) & 0x8000 != 0;
             let shift = (GetAsyncKeyState(VK_SHIFT.0 as i32) as u16) & 0x8000 != 0;
+            let alt = (GetAsyncKeyState(VK_MENU.0 as i32) as u16) & 0x8000 != 0;
 
             if ctrl && shift {
                 if let Some(app) = APP_HANDLE.get() {
@@ -83,34 +84,77 @@ unsafe extern "system" fn mouse_hook_callback(
                 return LRESULT(1);
             }
 
-            if ctrl && !shift {
+            if ctrl && alt && !shift {
                 if let Some(app) = APP_HANDLE.get() {
-                    if let Some(window) = app.get_webview_window("main") {
-                        if window.is_visible().unwrap_or(false) {
-                            let hook_struct = &*(l_param.0 as *const MSLLHOOKSTRUCT);
-                            let sx = hook_struct.pt.x;
-                            let sy = hook_struct.pt.y;
+                    if let Some(window) = app.get_webview_window("radial-menu") {
+                        crate::paste::save_foreground_window();
 
-                            RADIAL_RIGHT_DOWN.store(true, Ordering::SeqCst);
-                            RADIAL_START_X.store(sx, Ordering::SeqCst);
-                            RADIAL_START_Y.store(sy, Ordering::SeqCst);
+                        let hook_struct = &*(l_param.0 as *const MSLLHOOKSTRUCT);
+                        let sx = hook_struct.pt.x;
+                        let sy = hook_struct.pt.y;
 
-                            if let Some((cx, cy)) = screen_to_css(&window, sx, sy) {
-                                log::info!("radial-menu-down: screen=({}, {}), css=({}, {})", sx, sy, cx, cy);
-                                let _ = app.emit(
-                                    "radial-menu-down",
-                                    RadialMenuPoint { x: cx, y: cy },
+                        let scale = window.scale_factor().unwrap_or(1.0);
+                        let half_w = (150.0 * scale) as i32;
+                        let top_off = (30.0 * scale) as i32;
+
+                        // Pre-calc CSS coords before positioning (avoids stale outer_position)
+                        let css_x = ((half_w as f64) / scale).round() as i32;
+                        let css_y = ((top_off as f64) / scale).round() as i32;
+
+                        let _ = window.set_position(tauri::Position::Physical(
+                            tauri::PhysicalPosition::new(sx - half_w, sy - top_off),
+                        ));
+
+                        let _ = window.show();
+                        let _ = window.set_focus();
+
+                        // Force window to top of Z-order for global use
+                        if let Ok(raw_hwnd) = window.hwnd() {
+                            let hwnd = HWND(raw_hwnd.0);
+                            unsafe {
+                                let _ = SetWindowPos(
+                                    hwnd,
+                                    HWND_TOPMOST,
+                                    0, 0, 0, 0,
+                                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
                                 );
-                            } else {
-                                log::warn!("radial-menu-down: screen_to_css failed for screen=({}, {})", sx, sy);
+                                let _ = SetWindowPos(
+                                    hwnd,
+                                    HWND_NOTOPMOST,
+                                    0, 0, 0, 0,
+                                    SWP_NOMOVE | SWP_NOSIZE,
+                                );
                             }
                         }
+
+                        RADIAL_RIGHT_DOWN.store(true, Ordering::SeqCst);
+                        RADIAL_START_X.store(sx, Ordering::SeqCst);
+                        RADIAL_START_Y.store(sy, Ordering::SeqCst);
+
+                        log::info!("radial-menu-down: screen=({}, {}), css=({}, {})", sx, sy, css_x, css_y);
+                        let _ = app.emit(
+                            "radial-menu-down",
+                            RadialMenuPoint { x: css_x, y: css_y },
+                        );
                     }
                 }
+                return LRESULT(1);
             }
         }
 
         if msg == WM_MOUSEMOVE && RADIAL_RIGHT_DOWN.load(Ordering::SeqCst) {
+            // Close window if user released Ctrl or Alt while holding right button
+            let ctrl = (GetAsyncKeyState(VK_CONTROL.0 as i32) as u16) & 0x8000 != 0;
+            let alt = (GetAsyncKeyState(VK_MENU.0 as i32) as u16) & 0x8000 != 0;
+            if !ctrl || !alt {
+                RADIAL_RIGHT_DOWN.store(false, Ordering::SeqCst);
+                if let Some(app) = APP_HANDLE.get() {
+                    let _ = app.emit("radial-menu-up", ());
+                }
+                let hook = HHOOK(HOOK_HANDLE.load(Ordering::SeqCst));
+                return unsafe { CallNextHookEx(hook, n_code, w_param, l_param) };
+            }
+
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -120,7 +164,7 @@ unsafe extern "system" fn mouse_hook_callback(
                 LAST_MOVE_EMIT_MS.store(now, Ordering::SeqCst);
 
                 if let Some(app) = APP_HANDLE.get() {
-                    if let Some(window) = app.get_webview_window("main") {
+                    if let Some(window) = app.get_webview_window("radial-menu") {
                         let hook_struct = &*(l_param.0 as *const MSLLHOOKSTRUCT);
                         let sx = hook_struct.pt.x;
                         let sy = hook_struct.pt.y;
@@ -143,6 +187,7 @@ unsafe extern "system" fn mouse_hook_callback(
             if let Some(app) = APP_HANDLE.get() {
                 let _ = app.emit("radial-menu-up", ());
             }
+            return LRESULT(1);
         }
     }
 
@@ -159,7 +204,7 @@ pub fn install_mouse_hook(app: &AppHandle) {
         };
         if let Ok(h) = hook {
             HOOK_HANDLE.store(h.0, Ordering::SeqCst);
-            log::info!("Ctrl+Shift+RightClick mouse hook installed");
+            log::info!("Global mouse hook installed (Ctrl+Shift+RightClick / Ctrl+Alt+RightClick)");
         } else {
             log::warn!("Failed to install mouse hook");
         }

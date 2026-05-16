@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 import { useClipboardStore, type ClipType } from "../../stores/clipboardStore";
 import { usePhraseStore } from "../../stores/phraseStore";
 import { useHoverSwitch } from "./useHoverSwitch";
@@ -8,33 +10,46 @@ import { HoverProgress } from "./HoverProgress";
 
 type TabKey = "clipboard" | "phrases";
 
-const HOVER_DELAY = 2000;
-const POPUP_WIDTH = 300;
-const POPUP_MAX_HEIGHT = 420;
-const VIEWPORT_PADDING = 10;
+const HOVER_DELAY = 1000;
 const MAX_ITEMS = 30;
 
-function calculatePopupPosition(cursorX: number, cursorY: number) {
-  let left = cursorX - POPUP_WIDTH / 2;
-  let top = cursorY - 30;
+function formatTime(dateStr: string): string {
+  const date = new Date(dateStr);
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const hours = date.getHours().toString().padStart(2, "0");
+  const minutes = date.getMinutes().toString().padStart(2, "0");
+  return `${month}/${day} ${hours}:${minutes}`;
+}
 
-  if (left < VIEWPORT_PADDING) left = VIEWPORT_PADDING;
-  if (top < VIEWPORT_PADDING) top = VIEWPORT_PADDING;
-  if (left + POPUP_WIDTH > window.innerWidth - VIEWPORT_PADDING) {
-    left = window.innerWidth - VIEWPORT_PADDING - POPUP_WIDTH;
-  }
-  if (top + POPUP_MAX_HEIGHT > window.innerHeight - VIEWPORT_PADDING) {
-    top = window.innerHeight - VIEWPORT_PADDING - POPUP_MAX_HEIGHT;
-  }
+function ImageThumb({ recordId }: { recordId: string }) {
+  const [src, setSrc] = useState("");
+  const { records, getThumbnail } = useClipboardStore();
 
-  return { x: left, y: top };
+  useEffect(() => {
+    const record = records.find((r) => r.id === recordId);
+    if (!record || record.type !== "image") return;
+    let cancelled = false;
+    getThumbnail(record).then((url) => {
+      if (!cancelled && url) setSrc(url);
+    });
+    return () => { cancelled = true; };
+  }, [recordId, records, getThumbnail]);
+
+  if (!src) return <span className="radial-menu-item-text">…</span>;
+  return (
+    <img
+      src={src}
+      alt=""
+      style={{ width: 48, height: 36, objectFit: "cover", borderRadius: 5 }}
+    />
+  );
 }
 
 export default function RadialMenu() {
   const { t } = useTranslation();
 
   const [visible, setVisible] = useState(false);
-  const [popupPos, setPopupPos] = useState({ x: 0, y: 0 });
   const [activeTab, setActiveTab] = useState<TabKey>("clipboard");
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [clipboardCategory, setClipboardCategory] = useState<ClipType>("all");
@@ -53,6 +68,14 @@ export default function RadialMenu() {
   useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
   useEffect(() => { clipboardCategoryRef.current = clipboardCategory; }, [clipboardCategory]);
   useEffect(() => { phraseGroupIdRef.current = phraseGroupId; }, [phraseGroupId]);
+
+  useEffect(() => {
+    invoke<string>("get_setting", { key: "theme" }).then((theme) => {
+      if (theme === "dark" || theme === "light") {
+        document.documentElement.setAttribute("data-theme", theme);
+      }
+    }).catch(() => {});
+  }, []);
 
   const handleTabSwitch = useCallback((key: string) => {
     const tab = key as TabKey;
@@ -165,9 +188,15 @@ export default function RadialMenu() {
         isRightDownRef.current = true;
         startPosRef.current = { x: e.payload.x, y: e.payload.y };
 
+        // Sync theme with main window on every show
+        invoke<string>("get_setting", { key: "theme" }).then((theme) => {
+          if (theme === "dark" || theme === "light") {
+            document.documentElement.setAttribute("data-theme", theme);
+          }
+        }).catch(() => {});
+
         visibleRef.current = true;
         setVisible(true);
-        setPopupPos(calculatePopupPosition(e.payload.x, e.payload.y));
         useClipboardStore.getState().init();
         usePhraseStore.getState().loadGroups();
       });
@@ -179,9 +208,14 @@ export default function RadialMenu() {
         const cssY = e.payload.y;
 
         if (!visibleRef.current) {
+          invoke<string>("get_setting", { key: "theme" }).then((theme) => {
+            if (theme === "dark" || theme === "light") {
+              document.documentElement.setAttribute("data-theme", theme);
+            }
+          }).catch(() => {});
+
           visibleRef.current = true;
           setVisible(true);
-          setPopupPos(calculatePopupPosition(cssX, cssY));
           useClipboardStore.getState().init();
           usePhraseStore.getState().loadGroups();
         }
@@ -189,7 +223,7 @@ export default function RadialMenu() {
         updateHoverFromPoint(cssX, cssY);
       });
 
-      const unUp = await listen("radial-menu-up", () => {
+      const unUp = await listen("radial-menu-up", async () => {
         console.log("[RadialMenu] radial-menu-up, visible:", visibleRef.current, "selected:", selectedItemIdRef.current);
         if (isRightDownRef.current) {
           if (visibleRef.current && selectedItemIdRef.current) {
@@ -197,16 +231,18 @@ export default function RadialMenu() {
             const { records, pasteRecord } = useClipboardStore.getState();
             const record = records.find((r) => r.id === itemId);
             if (record) {
-              pasteRecord(record);
+              await pasteRecord(record);
             } else {
               const { phrases, pastePhrase } = usePhraseStore.getState();
               const phrase = phrases.find((p) => p.id === itemId);
               if (phrase) {
-                pastePhrase(phrase);
+                await pastePhrase(phrase);
               }
             }
           }
           resetState();
+          // Hide the popup window after processing
+          getCurrentWindow().hide();
         }
       });
 
@@ -270,7 +306,9 @@ export default function RadialMenu() {
     }
   }, [visible, activeTab, phraseGroupId, phraseStore.groups, phraseStore.loadPhrases]);
 
-  if (!visible) return null;
+  if (!visible) {
+    return <div style={{ position: "fixed", inset: 0, pointerEvents: "none" }} />;
+  }
 
   const filteredRecords = clipboardCategory === "all"
     ? clipboardStore.records
@@ -285,11 +323,13 @@ export default function RadialMenu() {
             ? r.content.replace(/\\/g, "/").split("/").pop() || r.content
             : r.content,
         type: r.type,
+        createdAt: r.created_at,
       }))
     : phraseStore.phrases.map((p) => ({
         id: p.id,
         content: p.content,
         type: "phrase" as string,
+        title: p.title,
       }));
 
   const categories = activeTab === "clipboard"
@@ -309,10 +349,7 @@ export default function RadialMenu() {
 
   return (
     <div className="radial-menu-overlay">
-      <div
-        className="radial-menu-popup"
-        style={{ left: popupPos.x, top: popupPos.y, width: POPUP_WIDTH }}
-      >
+      <div className="radial-menu-popup">
         <div className="radial-menu-nav">
           {(["clipboard", "phrases"] as TabKey[]).map((tab) => (
             <button
@@ -355,11 +392,21 @@ export default function RadialMenu() {
                 className={`radial-menu-item ${selectedItemId === item.id ? "selected" : ""}`}
                 data-radial-item-id={item.id}
               >
-                <span className="radial-menu-item-text">
-                  {item.content.length > 80
-                    ? item.content.slice(0, 80) + "…"
-                    : item.content}
-                </span>
+                {item.type === "image" ? (
+                  <ImageThumb recordId={item.id} />
+                ) : (
+                  <span className="radial-menu-item-text">
+                    {item.content.length > 80
+                      ? item.content.slice(0, 80) + "…"
+                      : item.content}
+                  </span>
+                )}
+                {"createdAt" in item && item.createdAt && (
+                  <span className="radial-menu-item-time">{formatTime(item.createdAt)}</span>
+                )}
+                {"title" in item && item.title && (
+                  <span className="radial-menu-item-remark">{item.title}</span>
+                )}
               </div>
             ))
           )}

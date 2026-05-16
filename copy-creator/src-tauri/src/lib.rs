@@ -95,6 +95,31 @@ pub fn run() {
 
             shortcut::install_mouse_hook(app.handle());
 
+            // Create hidden radial menu popup window
+            {
+                use tauri::WebviewWindowBuilder;
+                use tauri::WebviewUrl;
+                let radial = WebviewWindowBuilder::new(
+                    app,
+                    "radial-menu",
+                    WebviewUrl::App("index.html?radial=1".into()),
+                )
+                .title("")
+                .inner_size(300.0, 420.0)
+                .decorations(false)
+                .transparent(true)
+                .always_on_top(true)
+                .visible(false)
+                .shadow(true)
+                .skip_taskbar(true)
+                .resizable(false)
+                .build()?;
+                let _ = radial.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)));
+                #[cfg(target_os = "windows")]
+                apply_backdrop_effect(&radial);
+                log::info!("Radial menu popup window created");
+            }
+
             if let Ok(key) = db::get_setting(app.handle().clone(), "shortcut_key".to_string()) {
                 if !key.is_empty() {
                     if let Err(e) = shortcut::register_keyboard_shortcut(app.handle(), &key) {

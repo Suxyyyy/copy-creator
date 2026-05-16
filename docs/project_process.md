@@ -136,7 +136,7 @@ Phase 2 — 完善与优化 🔄 (进行中)
 1. **全局快捷键注册冲突** — `shortcut.rs` 和 `lib.rs` 中存在双重注册逻辑，需整理
 2. **剪切板记录来源应用未获取** — `source_app` 字段始终为空
 3. **翻译缓存策略单一** — 仅按精确匹配，不支持相似文本复用
-4. **终端 Ctrl+V 兼容性** — 部分老终端（cmd.exe）不支持 Ctrl+V，需 Shift+Insert 或右键
+4. **终端 Ctrl+V 兼容性** — 已深入调查，根因是 SendInput 的 LLMHF_INJECTED 标志被 Electron/Chromium 应用拦截。已尝试 Shift+Insert、AllowSetForegroundWindow、PostMessageW 多种方案。PostMessageW 方案（绕过 SendInput）理论可行但未充分测试，代码已回滚。详见「径向菜单开发记录」
 5. ~~**过期记录未自动删除** — `prune_old_records()` 函数已实现但从未被调用，需在启动时或定时触发~~ ✅ 已解决
 6. **API 凭证硬编码** — 百度 AppID/Secret 写入 init_db SQL，需移除（审查 #1）
 7. **SQL 注入风险** — get_clipboard_records 搜索拼接 SQL，需参数化（审查 #2）
@@ -200,4 +200,110 @@ Phase 2 — 完善与优化 🔄 (进行中)
 
 ---
 
-*最后更新：2026-05-15*
+## 径向菜单（Radial Menu）开发记录 — 2026-05-16
+
+### 功能概述
+
+径向菜单是一个独立 Tauri 窗口（`radial-menu`），通过 **Ctrl+Alt+右键长按** 触发，在鼠标位置弹出，显示剪切板和快捷短语的内容列表。用户按住右键移动鼠标到目标条目上，松开右键即可将内容粘贴到之前的应用中。
+
+### 架构要点
+
+```
+shortcut.rs (WH_MOUSE_LL 低层鼠标钩子)
+  ├── Ctrl+Alt+RightButtonDown → show radial-menu window at cursor position
+  ├── MouseMove (while right down) → emit "radial-menu-move" (throttled 16ms)
+  └── RightButtonUp → emit "radial-menu-up"
+        └── 前端 RadialMenu/index.tsx
+              ├── 根据坐标做 hover 检测 (document.elementFromPoint)
+              ├── Hover 1000ms 自动切换 tab/分类 (useHoverSwitch hook)
+              └── 调用 pasteRecord/pastePhrase → paste.rs
+                    └── paste_with_defocus: hide windows → restore focus → Ctrl+V
+```
+
+- 窗口定位：`SetWindowPos(HWND_TOPMOST)` → `SWP_SHOWWINDOW` → `HWND_NOTOPMOST`（瞬时置顶后恢复，避免常驻置顶干扰）
+- 坐标转换：`screen_to_css` 函数处理 DPI 缩放（physical → CSS pixels）
+- 前端 hover 检测：`document.elementFromPoint` + `closest("[data-radial-item-id]")` / `[data-radial-nav]` / `[data-radial-category]`
+
+### 已解决的问题
+
+#### 1. 窗口位置偏移 / 页面未填充窗口
+- **问题**：弹出窗口有间隙，内容未撑满
+- **修复**：移除 `calculatePopupPosition` 和 `VIEWPORT_PADDING`，popup 设置 `width: 100%; height: 100%`，移除 `border` 和 `border-radius`（DWM 已做圆角）
+
+#### 2. 双击粘贴（Double Paste）
+- **问题**：内容被粘贴两次
+- **根因链**：
+  1. 剪切板监控器 800ms 轮询，paste 线程写剪切板后监控器检测到"新变化"→ 重复记录
+  2. `PASTING.swap(false)` 过早清除了 PASTING 标志，监控器在 paste 线程写剪切板之前重新同步了旧缓存
+  3. WM_RBUTTONUP 同时触发了 radial-menu-up 和系统右键菜单
+- **修复**：
+  1. 添加 `PasteGuard`（RAII 模式，drop 时重置 PASTING）
+  2. 监控器改用 `PASTING.load(Ordering::SeqCst)` 只读不写，PASTING 仅由 PasteGuard 清除
+  3. 将缓存状态外部化为模块级 `pub static Mutex`（`LAST_CLIPBOARD_TEXT`、`LAST_CLIPBOARD_IMAGE_HASH`、`LAST_CLIPBOARD_FILES_KEY`），paste 函数写入剪切板后调用 `sync_monitor_cache()` 同步
+  4. WM_RBUTTONUP 处理中返回 `LRESULT(1)` 阻止消息继续传播
+
+#### 3. 粘贴输出字符 'V' 而非执行粘贴
+- **问题**：模拟的 Ctrl+V 被拆解为独立的 'V' 字符输入
+- **修复**：将 `enigo.key(Key::V, Direction::Click)` 改为 `Press` → 10ms sleep → `Release`，Control 和 V 之间有 30ms 间隔
+
+#### 4. 图片缩略图比例
+- **修复**：`ImageThumb` 组件设置 `width: 48, height: 36, objectFit: "cover", borderRadius: 5`，与主窗口一致
+
+#### 5. 剪切板时间显示
+- **修复**：添加 `formatTime()` 函数（M/D HH:mm 格式），items 中包含 `createdAt` 字段
+
+#### 6. 快捷短语备注显示
+- **修复**：items 中包含 `title` 字段，渲染为 `.radial-menu-item-remark`
+
+#### 7. 导航栏按钮圆角
+- **修复**：`.radial-menu-nav-tab` 的 `border-radius` 从 `10px 10px 0 0` 改为 `10px`（四个角）
+
+#### 8. 暗色模式同步
+- **问题**：径向菜单窗口不跟随主窗口的亮暗色切换
+- **修复**：在每次 `radial-menu-down` 和首次 `radial-menu-move` 事件中通过 `invoke("get_setting", { key: "theme" })` 重新读取主题并设置 `data-theme` 属性
+
+#### 9. 悬浮进度条颜色
+- **修复**：亮色模式 `rgba(0,0,0,0.35)`，暗色模式 `rgba(255,255,255,0.6)`
+
+### 尚未解决的问题
+
+#### 终端 / Electron 应用粘贴失败
+
+**现状**：`paste_with_defocus` 使用 enigo 模拟 Ctrl+V。enigo 底层调用 Windows `SendInput` API，该 API 会在键盘事件中设置 `LLMHF_INJECTED` 标志。Chromium/Electron 应用（包括 Trae IDE、VS Code、Windows Terminal 等）可能检测此标志并忽略合成的键盘输入。
+
+**已尝试的方案**：
+
+| 方案 | 结果 | 原因 |
+|------|------|------|
+| Ctrl+V (SendInput) | 普通应用 ✅ / 终端 ❌ | SendInput 的 INJECTED 标志被 Electron 拦截 |
+| Shift+Insert (SendInput) | 同 Ctrl+V | 同样使用 SendInput，同样被拦截 |
+| Ctrl+V + AllowSetForegroundWindow | 焦点恢复改善，但终端仍不工作 | 焦点正确恢复，但仍走 SendInput 路径 |
+| PostMessageW 直接向目标 HWND 发送 WM_KEYDOWN/WM_CHAR/WM_KEYUP | **已回滚**（未充分测试） | 绕过 SendInput 和 INJECTED 标志检测，理论可行 |
+
+**下一步方向**：
+1. **方案 A**：完成 `PostMessageW` 方案的测试。该方案的思路是放弃 `SendInput`（enigo），改用 Windows `PostMessageW` API 直接将 `WM_KEYDOWN`（VK_CONTROL）→ `WM_KEYDOWN`（'V'）→ `WM_CHAR`（0x16）→ `WM_KEYUP` 序列投递到目标窗口的消息队列，完全绕过系统输入队列和注入检测。代码已在 `paste_ctrl_v_to_hwnd()` 函数中实现后被回滚。
+2. **方案 B**：同时发送 Ctrl+V 和 Shift+Insert 两种按键，覆盖更多终端
+3. **方案 C**：使用 Windows UI Automation（`uiautomation` crate）在目标应用中执行粘贴操作
+4. **方案 D**：调查 enigo 是否有不使用 `SendInput` 的后端（如 `keybd_event` 旧 API）
+
+**关键文件**：
+- `src-tauri/src/paste.rs:64-121` — `paste_with_defocus` 函数
+- `src-tauri/src/shortcut.rs:10-11` — `save_foreground_window` / `LAST_FOREGROUND_HWND`
+- `src-tauri/src/clipboard.rs:4-7` — `PASTING` / `LAST_CLIPBOARD_*` 静态缓存
+
+### 当前 paste_with_defocus 最终状态（截至交接时）
+
+```rust
+fn paste_with_defocus(app: &AppHandle) -> Result<(), String> {
+    // 1. AllowForegroundWindow (ASFW_ANY) — 在隐藏窗口前授权
+    // 2. Hide radial-menu 窗口
+    // 3. Hide main 窗口（如可见）
+    // 4. SetForegroundWindow(saved_hwnd) — 恢复目标应用焦点
+    // 5. Sleep 200ms
+    // 6. enigo 模拟 Ctrl+V (Press Control → Click V → Release Control)
+}
+```
+
+---
+
+*最后更新：2026-05-16*
