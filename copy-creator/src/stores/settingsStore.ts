@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 
 type ThemeMode = "light" | "dark";
 
@@ -45,6 +46,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const next = get().themeMode === "light" ? "dark" : "light";
     set({ themeMode: next });
     await get().setSetting("theme", next);
+    await emit("theme-changed", { theme: next });
   },
 
   loadSettings: async () => {

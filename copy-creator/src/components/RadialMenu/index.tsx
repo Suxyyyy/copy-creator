@@ -81,6 +81,16 @@ export default function RadialMenu() {
     // Pre-load data so it's ready when the menu first shows
     useClipboardStore.getState().init();
     usePhraseStore.getState().loadGroups();
+
+    // Listen for theme changes from the main window
+    let unlistenTheme: UnlistenFn | undefined;
+    listen<{ theme: string }>("theme-changed", (e) => {
+      document.documentElement.setAttribute("data-theme", e.payload.theme);
+    }).then((fn) => { unlistenTheme = fn; });
+
+    return () => {
+      if (unlistenTheme) unlistenTheme();
+    };
   }, []);
 
   const handleTabSwitch = useCallback((key: string) => {
