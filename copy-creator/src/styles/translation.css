@@ -47,6 +47,23 @@
   background: var(--input-focus-bg);
 }
 
+.translation-input::-webkit-scrollbar {
+  width: 4px;
+}
+
+.translation-input::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.translation-input::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 2px;
+}
+
+[data-theme="dark"] .translation-input::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
+
 .translation-input-footer {
   display: flex;
   align-items: center;

@@ -144,9 +144,7 @@ export default function SettingsContent({ embedded }: Props) {
       console.error("Failed to set radial menu enabled:", e);
     }
 
-    if (localAutostart !== settings.autostartEnabled) {
-      await settings.setAutostart(localAutostart);
-    }
+    await settings.setAutostart(localAutostart);
 
     if (localLang !== i18n.language) {
       i18n.changeLanguage(localLang);

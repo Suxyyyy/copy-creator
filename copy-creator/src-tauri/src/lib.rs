@@ -6,6 +6,7 @@ mod translator;
 mod tray;
 
 use tauri::Manager;
+use tauri_plugin_autostart::ManagerExt;
 
 #[cfg(target_os = "windows")]
 fn apply_backdrop_effect(window: &tauri::WebviewWindow) {
@@ -88,6 +89,12 @@ pub fn run() {
 
             // Always start with light theme
             let _ = db::set_setting(app.handle().clone(), "theme".to_string(), "light".to_string());
+
+            // Repair autostart registry entry to ensure --hidden arg is present
+            let autostart = app.autolaunch();
+            if autostart.is_enabled().unwrap_or(false) {
+                let _ = autostart.enable();
+            }
 
             // Periodic pruning every hour
             let prune_handle = app.handle().clone();
