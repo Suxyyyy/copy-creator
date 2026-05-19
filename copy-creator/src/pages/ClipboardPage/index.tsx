@@ -3,8 +3,8 @@ import { useTranslation } from "react-i18next";
 import { useClipboardStore } from "../../stores/clipboardStore";
 import { Icons } from "../../components/Icons";
 import SearchInput from "../../components/SearchInput";
-import { ImageThumb } from "./ImageThumb";
-import { formatTime, getFileName, TYPE_META } from "./utils";
+import { ClipboardCard } from "./ClipboardCard";
+import { TYPE_META } from "./utils";
 
 type ClipType = "all" | "text" | "image" | "link" | "file";
 
@@ -39,14 +39,30 @@ export default function ClipboardPage() {
     { key: "file", label: t("clipboard.file") },
   ];
 
-  const labels: Record<string, string> = {
-    text: t("clipboard.text"),
-    image: t("clipboard.image"),
-    link: t("clipboard.link"),
-    file: t("clipboard.file"),
-  };
+  const labels: Record<string, string> = useMemo(
+    () => ({
+      text: t("clipboard.text"),
+      image: t("clipboard.image"),
+      link: t("clipboard.link"),
+      file: t("clipboard.file"),
+    }),
+    [t],
+  );
 
-  const getTypeLabel = (type: string): string => labels[type] || labels.text;
+  const getTypeLabel = useCallback(
+    (type: string): string => labels[type] || labels.text,
+    [labels],
+  );
+
+  const handlePaste = useCallback(
+    (r: typeof records[number]) => pasteRecord(r),
+    [pasteRecord],
+  );
+
+  const handleDelete = useCallback(
+    (id: string) => deleteRecord(id),
+    [deleteRecord],
+  );
 
   const filtered = useMemo(
     () => (category === "all" ? records : records.filter((r) => r.type === category)),
@@ -93,7 +109,7 @@ export default function ClipboardPage() {
         ))}
       </div>
 
-      {loading ? (
+      {loading && records.length === 0 ? (
         <div className="clipboard-list">
           {[1, 2, 3, 4].map((i) => (
             <div key={i} className="notification skeleton">
@@ -119,62 +135,18 @@ export default function ClipboardPage() {
         </div>
       ) : (
         <div className="clipboard-list">
-          {filtered.map((r, i) => {
-            const meta = TYPE_META[r.type] || TYPE_META.text;
-            return (
-              <div
-                key={r.id}
-                className={`notification clipboard-card type-${r.type}`}
-                style={{ "--color": meta.color, "--enter-delay": i } as React.CSSProperties}
-                onClick={() => pasteRecord(r)}
-              >
-                <div className="notibar" />
-                <div className="noticontent">
-                  <div className="notititle clipboard-card-header">
-                    <span className="noti-type-label">
-                      <span className="noti-type-icon">{meta.icon}</span>
-                      <span className="noti-type-text">{getTypeLabel(r.type)}</span>
-                    </span>
-                  </div>
-                  <div className="notibody clipboard-card-body">
-                    {r.type === "image" ? (
-                      <ImageThumb
-                        record={r}
-                        onHover={handleThumbHover}
-                        onLeave={handleThumbLeave}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          pasteRecord(r);
-                        }}
-                      />
-                    ) : r.type === "link" ? (
-                      <span className="clipboard-link-content">{r.content}</span>
-                    ) : r.type === "file" ? (
-                      <span className="clipboard-file-content">
-                        {getFileName(r.content)}
-                      </span>
-                    ) : (
-                      <span className="clipboard-text-content">{r.content}</span>
-                    )}
-                  </div>
-                  <div className="notititle clipboard-card-footer">
-                    <span className="clipboard-card-time">{formatTime(r.created_at)}</span>
-                    <div className="clipboard-card-actions">
-                      <button
-                        className="card-delete-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteRecord(r.id);
-                        }}
-                      >
-                        {Icons.delete}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          {filtered.map((r, i) => (
+            <ClipboardCard
+              key={r.id}
+              record={r}
+              index={i}
+              getTypeLabel={getTypeLabel}
+              onPaste={handlePaste}
+              onDelete={handleDelete}
+              onThumbHover={handleThumbHover}
+              onThumbLeave={handleThumbLeave}
+            />
+          ))}
         </div>
       )}
 

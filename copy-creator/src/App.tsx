@@ -41,6 +41,7 @@ function App() {
   const COLLAPSE_THRESHOLD = 80;
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
   const [isCollapsed, setIsCollapsed] = useState(true);
+  const sidebarRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
   const dragStartX = useRef(0);
   const dragStartWidth = useRef(0);
@@ -63,8 +64,16 @@ function App() {
       if (!isDragging.current) return;
       const delta = e.clientX - dragStartX.current;
       const newWidth = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, dragStartWidth.current + delta));
-      setSidebarWidth(newWidth);
-      setIsCollapsed(newWidth <= COLLAPSE_THRESHOLD);
+      const el = sidebarRef.current;
+      if (el) {
+        el.style.width = `${newWidth}px`;
+        el.style.minWidth = `${newWidth}px`;
+        if (newWidth <= COLLAPSE_THRESHOLD) {
+          el.classList.add("collapsed");
+        } else {
+          el.classList.remove("collapsed");
+        }
+      }
     };
 
     const handleMouseUp = () => {
@@ -72,6 +81,14 @@ function App() {
       isDragging.current = false;
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      const el = sidebarRef.current;
+      if (el) {
+        const finalWidth = parseFloat(el.style.width);
+        if (!isNaN(finalWidth)) {
+          setSidebarWidth(finalWidth);
+          setIsCollapsed(finalWidth <= COLLAPSE_THRESHOLD);
+        }
+      }
     };
 
     document.addEventListener("mousemove", handleMouseMove);
@@ -94,6 +111,7 @@ function App() {
   return (
     <div className="app-container">
       <div
+        ref={sidebarRef}
         className={`sidebar ${isCollapsed ? "collapsed" : ""}`}
         style={{ width: sidebarWidth, minWidth: sidebarWidth }}
         data-tauri-drag-region
