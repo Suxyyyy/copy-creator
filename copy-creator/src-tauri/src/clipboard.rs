@@ -245,17 +245,28 @@ fn read_clipboard_image_raw() -> Option<(Vec<u8>, u32, u32)> {
                         let bpp = *((ptr as *const u8).add(14)) as u16;
                         let compression = *header.add(4);
                         let w = *header.add(1) as i32;
-                        let h = (*header.add(2) as i32).abs();
+                        let h_raw = *header.add(2) as i32;
+                        // DIB convention: positive height = bottom-up rows (typical
+                        // for screenshots); negative = top-down. Without flipping the
+                        // bottom-up case the image renders upside-down.
+                        let is_bottom_up = h_raw > 0;
+                        let h = h_raw.abs();
                         if w > 0 && h > 0 && w < 20000 && h < 20000 {
                             let rgba = if bpp == 32 && compression == 0 {
                                 let pixel_count = (w * h) as usize;
                                 let src = (ptr as *const u8).add(bi_size as usize);
                                 let mut rgba = vec![0u8; pixel_count * 4];
-                                for i in 0..pixel_count {
-                                    rgba[i * 4] = *src.add(i * 4 + 2);
-                                    rgba[i * 4 + 1] = *src.add(i * 4 + 1);
-                                    rgba[i * 4 + 2] = *src.add(i * 4);
-                                    rgba[i * 4 + 3] = *src.add(i * 4 + 3);
+                                let row_stride_px = w as usize;
+                                for y in 0..h as usize {
+                                    let src_y = if is_bottom_up { h as usize - 1 - y } else { y };
+                                    for x in 0..row_stride_px {
+                                        let src_i = src_y * row_stride_px + x;
+                                        let dst_i = y * row_stride_px + x;
+                                        rgba[dst_i * 4]     = *src.add(src_i * 4 + 2);
+                                        rgba[dst_i * 4 + 1] = *src.add(src_i * 4 + 1);
+                                        rgba[dst_i * 4 + 2] = *src.add(src_i * 4);
+                                        rgba[dst_i * 4 + 3] = *src.add(src_i * 4 + 3);
+                                    }
                                 }
                                 rgba
                             } else {
