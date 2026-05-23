@@ -10,8 +10,8 @@
      what caused scroll ghosting in earlier attempts. */
   background: linear-gradient(
     135deg,
-    rgba(210, 225, 245, 0.94) 0%,
-    rgba(245, 220, 230, 0.94) 100%
+    rgba(210, 225, 245, 0.82) 0%,
+    rgba(245, 220, 230, 0.82) 100%
   );
   overflow: hidden;
   position: relative;
@@ -22,8 +22,8 @@
 [data-theme="dark"] .app-container {
   background: linear-gradient(
     135deg,
-    rgba(60, 75, 105, 0.88) 0%,
-    rgba(105, 70, 90, 0.88) 100%
+    rgba(60, 75, 105, 0.76) 0%,
+    rgba(105, 70, 90, 0.76) 100%
   );
 }
 
