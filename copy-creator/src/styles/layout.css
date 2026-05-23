@@ -3,11 +3,28 @@
   height: 100vh;
   display: flex;
   flex-direction: row;
-  background: transparent;
+  /* Light-blue (top-left) → light-pink (bottom-right) wash. The window is
+     transparent at the OS level; this single solid layer is what gives the
+     gradient look. Using `background` (not a ::before pseudo-element) avoids
+     creating an extra compositor layer over the transparent window, which is
+     what caused scroll ghosting in earlier attempts. */
+  background: linear-gradient(
+    135deg,
+    rgba(210, 225, 245, 0.94) 0%,
+    rgba(245, 220, 230, 0.94) 100%
+  );
   overflow: hidden;
   position: relative;
   border: none;
   outline: none;
+}
+
+[data-theme="dark"] .app-container {
+  background: linear-gradient(
+    135deg,
+    rgba(60, 75, 105, 0.88) 0%,
+    rgba(105, 70, 90, 0.88) 100%
+  );
 }
 
 .app-background {
