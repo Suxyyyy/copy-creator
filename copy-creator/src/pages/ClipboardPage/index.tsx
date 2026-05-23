@@ -25,6 +25,7 @@ export default function ClipboardPage() {
     setCategory,
     loadRecords,
     deleteRecord,
+    togglePin,
     pasteRecord,
   } = useClipboardStore();
 
@@ -62,6 +63,10 @@ export default function ClipboardPage() {
   const handleDelete = useCallback(
     (id: string) => deleteRecord(id),
     [deleteRecord],
+  );
+  const handleTogglePin = useCallback(
+    (id: string) => togglePin(id),
+    [togglePin],
   );
 
   const filtered = useMemo(
@@ -143,6 +148,7 @@ export default function ClipboardPage() {
               getTypeLabel={getTypeLabel}
               onPaste={handlePaste}
               onDelete={handleDelete}
+              onTogglePin={handleTogglePin}
               onThumbHover={handleThumbHover}
               onThumbLeave={handleThumbLeave}
             />

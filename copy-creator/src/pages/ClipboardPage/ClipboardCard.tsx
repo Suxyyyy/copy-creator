@@ -10,6 +10,7 @@ interface ClipboardCardProps {
   getTypeLabel: (type: string) => string;
   onPaste: (r: ClipboardRecord) => void;
   onDelete: (id: string) => void;
+  onTogglePin: (id: string) => void;
   onThumbHover: (thumbSrc: string, rect: DOMRect) => void;
   onThumbLeave: () => void;
 }
@@ -20,6 +21,7 @@ function ClipboardCardInner({
   getTypeLabel,
   onPaste,
   onDelete,
+  onTogglePin,
   onThumbHover,
   onThumbLeave,
 }: ClipboardCardProps) {
@@ -33,10 +35,17 @@ function ClipboardCardInner({
     },
     [onDelete, record.id],
   );
+  const handleTogglePin = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      onTogglePin(record.id);
+    },
+    [onTogglePin, record.id],
+  );
 
   return (
     <div
-      className={`notification clipboard-card type-${record.type}`}
+      className={`notification clipboard-card type-${record.type}${record.is_pinned ? " pinned" : ""}`}
       style={{ "--color": meta.color, "--enter-delay": index } as React.CSSProperties}
       onClick={handlePaste}
     >
@@ -47,6 +56,13 @@ function ClipboardCardInner({
             <span className="noti-type-icon">{meta.icon}</span>
             <span className="noti-type-text">{getTypeLabel(record.type)}</span>
           </span>
+          <button
+            className={`card-pin-btn${record.is_pinned ? " active" : ""}`}
+            onClick={handleTogglePin}
+            title={record.is_pinned ? "取消置顶" : "置顶"}
+          >
+            {record.is_pinned ? Icons.pin : Icons.pinOutlined}
+          </button>
         </div>
         <div className="notibody clipboard-card-body">
           {record.type === "image" ? (

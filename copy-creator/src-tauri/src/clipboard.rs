@@ -430,6 +430,7 @@ fn insert_and_emit(app: &AppHandle, record_type: &str, content: &str) {
             "content": content,
             "source_app": "",
             "created_at": now,
+            "is_pinned": false,
         }),
     ).ok();
 }

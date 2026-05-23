@@ -251,6 +251,56 @@
   padding: 0.65rem 0.5rem 0.3rem 1rem;
 }
 
+.card-pin-btn {
+  background: transparent;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  flex-shrink: 0;
+}
+
+.clipboard-card:hover .card-pin-btn,
+.card-pin-btn.active {
+  opacity: 1;
+}
+
+.card-pin-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text-secondary);
+}
+
+.card-pin-btn.active {
+  color: #FF9500;
+}
+
+.card-pin-btn.active:hover {
+  background: rgba(255, 149, 0, 0.12);
+}
+
+.card-pin-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+[data-theme="dark"] .card-pin-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.clipboard-card.pinned {
+  border-color: rgba(255, 149, 0, 0.45);
+}
+
+[data-theme="dark"] .clipboard-card.pinned {
+  border-color: rgba(255, 149, 0, 0.55);
+}
+
 .clipboard-card-body {
   padding: 0 1rem 0;
   min-height: calc(1 * 1.5 * 14px);

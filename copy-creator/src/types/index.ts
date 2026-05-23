@@ -4,6 +4,7 @@ export interface ClipboardRecord {
   content: string;
   source_app: string;
   created_at: string;
+  is_pinned?: boolean;
 }
 
 export interface PhraseGroup {

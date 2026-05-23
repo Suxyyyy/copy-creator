@@ -13,6 +13,7 @@ interface ClipboardRecord {
   content: string;
   source_app: string;
   created_at: string;
+  is_pinned?: boolean;
 }
 
 interface ClipboardState {
@@ -29,12 +30,24 @@ interface ClipboardState {
   setCategory: (c: ClipType) => void;
   loadRecords: () => Promise<void>;
   deleteRecord: (id: string) => Promise<void>;
+  togglePin: (id: string) => Promise<void>;
   pasteRecord: (record: ClipboardRecord) => Promise<void>;
   getThumbnail: (record: ClipboardRecord) => Promise<string>;
   getImageData: (record: ClipboardRecord) => Promise<string>;
 }
 
 let unlisten: UnlistenFn | null = null;
+
+function sortRecords(records: ClipboardRecord[]): ClipboardRecord[] {
+  // Pinned first, then by created_at desc. Stable sort because Array.prototype.sort
+  // is required to be stable in modern JS engines.
+  return [...records].sort((a, b) => {
+    const pa = a.is_pinned ? 1 : 0;
+    const pb = b.is_pinned ? 1 : 0;
+    if (pa !== pb) return pb - pa;
+    return a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0;
+  });
+}
 
 const MAX_CONCURRENT = 3;
 let running = 0;
@@ -82,10 +95,19 @@ export const useClipboardStore = create<ClipboardState>((set, get) => ({
       set((state) => {
         // Skip if record with same ID already exists (prevents loadRecords race)
         if (state.records.some((r) => r.id === newRecord.id)) return state;
-        return { records: [newRecord, ...state.records].slice(0, 2000) };
+        return { records: sortRecords([newRecord, ...state.records]).slice(0, 2000) };
       });
     }).then((fn) => {
       unlisten = fn;
+    });
+
+    listen<{ id: string; is_pinned: boolean }>("clipboard-pinned", (event) => {
+      const { id, is_pinned } = event.payload;
+      set((state) => ({
+        records: sortRecords(
+          state.records.map((r) => (r.id === id ? { ...r, is_pinned } : r)),
+        ),
+      }));
     });
 
     listen<string>("clipboard-deleted", (event) => {
@@ -131,6 +153,15 @@ export const useClipboardStore = create<ClipboardState>((set, get) => ({
       });
     } catch (e) {
       console.error("Failed to delete record:", e);
+    }
+  },
+
+  togglePin: async (id: string) => {
+    try {
+      await invoke("toggle_pin_clipboard_record", { id });
+      // The clipboard-pinned event listener updates state; nothing else needed.
+    } catch (e) {
+      console.error("Failed to toggle pin:", e);
     }
   },
 

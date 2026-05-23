@@ -155,6 +155,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             db::get_clipboard_records,
             db::delete_clipboard_record,
+            db::toggle_pin_clipboard_record,
             db::get_phrase_groups,
             db::create_phrase_group,
             db::update_phrase_group,

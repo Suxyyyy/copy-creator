@@ -148,6 +148,13 @@ pub fn init_db(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         ",
     )?;
 
+    // Idempotent column migration. Ignore the duplicate-column error when the
+    // schema is already on the new version.
+    let _ = conn.execute(
+        "ALTER TABLE clipboard_records ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
+
     app.manage(DbState {
         conn: Mutex::new(conn),
     });
@@ -180,7 +187,7 @@ pub fn prune_old_records(app: &AppHandle) -> Result<(), Box<dyn std::error::Erro
         // Collect image records before deletion for file cleanup
         {
             let mut stmt = conn.prepare(
-                "SELECT content FROM clipboard_records WHERE type = 'image' AND datetime(created_at) < datetime('now', ?1)",
+                "SELECT content FROM clipboard_records WHERE type = 'image' AND is_pinned = 0 AND datetime(created_at) < datetime('now', ?1)",
             )?;
             let rows = stmt.query_map(params![format!("-{} days", days)], |row| {
                 row.get::<_, String>(0)
@@ -189,7 +196,7 @@ pub fn prune_old_records(app: &AppHandle) -> Result<(), Box<dyn std::error::Erro
         }
 
         conn.execute(
-            "DELETE FROM clipboard_records WHERE datetime(created_at) < datetime('now', ?1)",
+            "DELETE FROM clipboard_records WHERE is_pinned = 0 AND datetime(created_at) < datetime('now', ?1)",
             params![format!("-{} days", days)],
         )?;
     }
@@ -239,8 +246,8 @@ pub fn get_clipboard_records(
         let escaped = q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
         let mut stmt = conn
             .prepare(
-                "SELECT id, type, content, source_app, created_at FROM clipboard_records
-                 WHERE content LIKE '%' || ?1 || '%' ESCAPE '\\' ORDER BY created_at DESC LIMIT ?2",
+                "SELECT id, type, content, source_app, created_at, is_pinned FROM clipboard_records
+                 WHERE content LIKE '%' || ?1 || '%' ESCAPE '\\' ORDER BY is_pinned DESC, created_at DESC LIMIT ?2",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
@@ -251,6 +258,7 @@ pub fn get_clipboard_records(
                     "content": row.get::<_, String>(2)?,
                     "source_app": row.get::<_, String>(3)?,
                     "created_at": row.get::<_, String>(4)?,
+                    "is_pinned": row.get::<_, i64>(5)? != 0,
                 }))
             })
             .map_err(|e| e.to_string())?;
@@ -260,8 +268,8 @@ pub fn get_clipboard_records(
     } else {
         let mut stmt = conn
             .prepare(
-                "SELECT id, type, content, source_app, created_at FROM clipboard_records
-                 ORDER BY created_at DESC LIMIT ?1",
+                "SELECT id, type, content, source_app, created_at, is_pinned FROM clipboard_records
+                 ORDER BY is_pinned DESC, created_at DESC LIMIT ?1",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
@@ -272,6 +280,7 @@ pub fn get_clipboard_records(
                     "content": row.get::<_, String>(2)?,
                     "source_app": row.get::<_, String>(3)?,
                     "created_at": row.get::<_, String>(4)?,
+                    "is_pinned": row.get::<_, i64>(5)? != 0,
                 }))
             })
             .map_err(|e| e.to_string())?;
@@ -318,6 +327,38 @@ pub fn delete_clipboard_record(app: AppHandle, id: String) -> Result<(), String>
     }
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn toggle_pin_clipboard_record(app: AppHandle, id: String) -> Result<bool, String> {
+    let new_pinned: bool = {
+        let state = app.state::<DbState>();
+        let conn = state.conn.lock().map_err(|e| e.to_string())?;
+
+        let current: i64 = conn
+            .query_row(
+                "SELECT is_pinned FROM clipboard_records WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        let toggled = if current == 0 { 1 } else { 0 };
+
+        conn.execute(
+            "UPDATE clipboard_records SET is_pinned = ?1 WHERE id = ?2",
+            params![toggled, id],
+        )
+        .map_err(|e| e.to_string())?;
+
+        toggled != 0
+    };
+
+    let _ = app.emit(
+        "clipboard-pinned",
+        serde_json::json!({ "id": id, "is_pinned": new_pinned }),
+    );
+
+    Ok(new_pinned)
 }
 
 #[tauri::command]
